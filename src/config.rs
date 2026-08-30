@@ -41,7 +41,7 @@ pub(crate) use self::keybinds::parse_key_combo;
 pub(crate) use self::{
     io::upsert_top_level_bool,
     tab_bar::{
-        parse_tab_bar_datetime_format, tab_bar_right_diagnostics,
+        command_entry_source_diagnostic, parse_tab_bar_datetime_format, tab_bar_right_diagnostics,
         MAX_TAB_BAR_COMMAND_INTERVAL_SECONDS, MAX_TAB_BAR_COMMAND_TIMEOUT_SECONDS,
         MAX_TAB_BAR_RIGHT_ENTRIES,
     },

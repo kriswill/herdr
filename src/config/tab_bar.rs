@@ -31,12 +31,37 @@ pub enum TabBarRightEntryConfig {
         text: String,
     },
     Command {
+        /// Shell command line. Mutually exclusive with `argv`.
+        #[serde(default)]
         command: String,
+        /// Program and arguments, run directly without a shell. Mutually
+        /// exclusive with `command`.
+        #[serde(default)]
+        argv: Vec<String>,
+        /// Preserve SGR (color/attribute) escape sequences from the command's
+        /// output and render them inline. All other escape sequences are
+        /// stripped. Defaults to plain sanitized text.
+        #[serde(default)]
+        ansi: bool,
         #[serde(default = "default_command_interval_seconds")]
         interval_seconds: u64,
         #[serde(default = "default_command_timeout_seconds")]
         timeout_seconds: u64,
     },
+}
+
+pub(crate) fn command_entry_source_diagnostic(
+    command: &str,
+    argv: &[String],
+) -> Option<&'static str> {
+    let has_command = !command.trim().is_empty();
+    let has_argv = !argv.is_empty();
+    match (has_command, has_argv) {
+        (true, true) => Some("sets both command and argv; hiding entry"),
+        (false, false) => Some("needs a command or argv; hiding entry"),
+        (false, true) if argv[0].trim().is_empty() => Some("argv program is empty; hiding entry"),
+        _ => None,
+    }
 }
 
 pub(crate) fn parse_tab_bar_datetime_format(
@@ -74,13 +99,13 @@ pub(crate) fn tab_bar_right_diagnostics(entries: &[TabBarRightEntryConfig]) -> V
             }
             TabBarRightEntryConfig::Command {
                 command,
+                argv,
                 interval_seconds,
                 timeout_seconds,
+                ..
             } => {
-                if command.trim().is_empty() {
-                    diagnostics.push(format!(
-                        "ui.tab_bar_right[{index}] command is empty; hiding entry"
-                    ));
+                if let Some(message) = command_entry_source_diagnostic(command, argv) {
+                    diagnostics.push(format!("ui.tab_bar_right[{index}] {message}"));
                 }
                 if *interval_seconds == 0 {
                     diagnostics.push(format!(
@@ -158,11 +183,15 @@ entries = [
             },
             TabBarRightEntryConfig::Command {
                 command: String::new(),
+                argv: Vec::new(),
+                ansi: false,
                 interval_seconds: 0,
                 timeout_seconds: 0,
             },
             TabBarRightEntryConfig::Command {
                 command: "status.sh".into(),
+                argv: Vec::new(),
+                ansi: false,
                 interval_seconds: MAX_TAB_BAR_COMMAND_INTERVAL_SECONDS + 1,
                 timeout_seconds: MAX_TAB_BAR_COMMAND_TIMEOUT_SECONDS + 1,
             },
@@ -171,11 +200,63 @@ entries = [
         let diagnostics = tab_bar_right_diagnostics(&entries).join("\n");
         assert!(diagnostics.contains("invalid datetime format"));
         assert!(diagnostics.contains("unsupported datetime format"));
-        assert!(diagnostics.contains("command is empty"));
+        assert!(diagnostics.contains("needs a command or argv"));
         assert!(diagnostics.contains("interval_seconds must be at least 1"));
         assert!(diagnostics.contains("interval_seconds may be at most"));
         assert!(diagnostics.contains("timeout_seconds must be at least 1"));
         assert!(diagnostics.contains("timeout_seconds may be at most"));
         assert!(parse_tab_bar_datetime_format("").is_err());
+    }
+
+    #[test]
+    fn tab_bar_command_entry_parses_argv_and_ansi() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            entries: Vec<TabBarRightEntryConfig>,
+        }
+
+        let parsed: Wrapper = toml::from_str(
+            r#"
+entries = [
+  { type = "command", argv = ["dotbar", "cpu"], ansi = true, interval_seconds = 2 },
+]
+"#,
+        )
+        .expect("parse argv command entry");
+
+        assert_eq!(
+            parsed.entries[0],
+            TabBarRightEntryConfig::Command {
+                command: String::new(),
+                argv: vec!["dotbar".into(), "cpu".into()],
+                ansi: true,
+                interval_seconds: 2,
+                timeout_seconds: DEFAULT_TAB_BAR_COMMAND_TIMEOUT_SECONDS,
+            }
+        );
+    }
+
+    #[test]
+    fn diagnostics_reject_ambiguous_and_empty_command_sources() {
+        let command = |command: &str, argv: &[&str]| TabBarRightEntryConfig::Command {
+            command: command.into(),
+            argv: argv.iter().map(|arg| (*arg).into()).collect(),
+            ansi: false,
+            interval_seconds: 5,
+            timeout_seconds: 2,
+        };
+        let entries = vec![
+            command("status.sh", &["dotbar"]),
+            command("", &[]),
+            command("", &[" "]),
+            command("status.sh", &[]),
+            command("", &["dotbar", "cpu"]),
+        ];
+
+        let diagnostics = tab_bar_right_diagnostics(&entries);
+        assert_eq!(diagnostics.len(), 3);
+        assert!(diagnostics[0].contains("sets both command and argv"));
+        assert!(diagnostics[1].contains("needs a command or argv"));
+        assert!(diagnostics[2].contains("argv program is empty"));
     }
 }

@@ -1,6 +1,7 @@
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
+    text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
@@ -45,9 +46,20 @@ fn tab_chrome_label(ws: &crate::workspace::Workspace, tab_idx: usize) -> String 
 }
 
 #[derive(Clone, Copy)]
-struct VisibleStatusSegment<'a> {
-    text: &'a str,
-    accent: bool,
+enum VisibleStatusSegment<'a> {
+    Text { text: &'a str, accent: bool },
+    Styled(&'a [crate::app::state::TabBarStyledSpan]),
+}
+
+impl VisibleStatusSegment<'_> {
+    fn width(&self) -> u16 {
+        match self {
+            Self::Text { text, .. } => display_width_u16(text),
+            Self::Styled(spans) => spans.iter().fold(0_u16, |width, span| {
+                width.saturating_add(display_width_u16(&span.text))
+            }),
+        }
+    }
 }
 
 fn visible_status_segments(app: &AppState) -> Vec<VisibleStatusSegment<'_>> {
@@ -58,20 +70,27 @@ fn visible_status_segments(app: &AppState) -> Vec<VisibleStatusSegment<'_>> {
     app.tab_bar_right
         .iter()
         .filter_map(|segment| match segment {
-            crate::app::state::TabBarStatusSegment::Zoom if zoomed => Some(VisibleStatusSegment {
-                text: ZOOM_INDICATOR,
-                accent: true,
-            }),
+            crate::app::state::TabBarStatusSegment::Zoom if zoomed => {
+                Some(VisibleStatusSegment::Text {
+                    text: ZOOM_INDICATOR,
+                    accent: true,
+                })
+            }
             crate::app::state::TabBarStatusSegment::Text(Some(text))
                 if display_width_u16(text) > 0 =>
             {
-                Some(VisibleStatusSegment {
+                Some(VisibleStatusSegment::Text {
                     text,
                     accent: false,
                 })
             }
+            crate::app::state::TabBarStatusSegment::Styled(Some(spans)) => {
+                let segment = VisibleStatusSegment::Styled(spans.as_slice());
+                (segment.width() > 0).then_some(segment)
+            }
             crate::app::state::TabBarStatusSegment::Zoom
-            | crate::app::state::TabBarStatusSegment::Text(_) => None,
+            | crate::app::state::TabBarStatusSegment::Text(_)
+            | crate::app::state::TabBarStatusSegment::Styled(_) => None,
         })
         .collect()
 }
@@ -79,7 +98,7 @@ fn visible_status_segments(app: &AppState) -> Vec<VisibleStatusSegment<'_>> {
 fn tab_bar_status_width(app: &AppState) -> u16 {
     let segments = visible_status_segments(app);
     let content_width = segments.iter().fold(0_u16, |width, segment| {
-        width.saturating_add(display_width_u16(segment.text))
+        width.saturating_add(segment.width())
     });
     let separators = u16::try_from(segments.len().saturating_sub(1)).unwrap_or(u16::MAX);
     content_width
@@ -485,17 +504,33 @@ pub(super) fn render_tab_bar(app: &AppState, frame: &mut Frame, area: Rect) {
                 x = x.saturating_add(separator_width);
             }
 
-            let width = display_width_u16(segment.text);
+            let width = segment.width();
             let rect = Rect::new(x, area.y, width, 1);
-            let style = if segment.accent {
-                Style::default()
-                    .fg(panel_contrast_fg(p))
-                    .bg(p.accent)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(p.overlay1).bg(p.panel_bg)
-            };
-            frame.render_widget(Paragraph::new(segment.text).style(style), rect);
+            match segment {
+                VisibleStatusSegment::Text { text, accent } => {
+                    let style = if *accent {
+                        Style::default()
+                            .fg(panel_contrast_fg(p))
+                            .bg(p.accent)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(p.overlay1).bg(p.panel_bg)
+                    };
+                    frame.render_widget(Paragraph::new(*text).style(style), rect);
+                }
+                VisibleStatusSegment::Styled(spans) => {
+                    // Command SGR styling wins where set; theme colors fill in
+                    // unset foreground/background so the entry sits on the bar.
+                    let base = Style::default().fg(p.overlay1).bg(p.panel_bg);
+                    let line = Line::from(
+                        spans
+                            .iter()
+                            .map(|span| Span::styled(span.text.as_str(), base.patch(span.style)))
+                            .collect::<Vec<_>>(),
+                    );
+                    frame.render_widget(Paragraph::new(line), rect);
+                }
+            }
             x = x.saturating_add(width);
         }
     }
@@ -582,6 +617,54 @@ mod tests {
         for rect in &view.tab_hit_areas {
             assert!(rect.x + rect.width <= content.x + content.width);
         }
+    }
+
+    #[test]
+    fn tab_bar_renders_styled_status_spans_with_command_colors() {
+        use ratatui::style::{Color, Style};
+
+        let span = |text: &str, style: Style| crate::app::state::TabBarStyledSpan {
+            text: text.into(),
+            style,
+        };
+        let mut app = AppState::test_new();
+        app.tab_bar_right = vec![
+            crate::app::state::TabBarStatusSegment::Styled(Some(vec![
+                span("42%", Style::default().fg(Color::Indexed(1))),
+                span(" cpu", Style::default()),
+            ])),
+            // Pending and empty styled entries stay hidden.
+            crate::app::state::TabBarStatusSegment::Styled(None),
+            crate::app::state::TabBarStatusSegment::Styled(Some(Vec::new())),
+            crate::app::state::TabBarStatusSegment::Text(Some("14:30".into())),
+        ];
+        app.tab_bar_right_separator = " | ".into();
+
+        app.workspaces = vec![Workspace::test_new("test")];
+        app.active = Some(0);
+        app.view.tab_bar_rect = Rect::new(0, 0, 60, 1);
+        let content = tab_bar_content_area(&app, app.view.tab_bar_rect);
+        let view = compute_tab_bar_view(&app.workspaces[0], content, 0, true, false);
+        app.view.tab_hit_areas = view.tab_hit_areas;
+
+        let backend = TestBackend::new(60, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_tab_bar(&app, frame, app.view.tab_bar_rect))
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let row = buffer_row_text(buffer, app.view.tab_bar_rect, 0);
+        assert!(row.ends_with("42% cpu | 14:30"), "tab row: {row:?}");
+        let status_x = 60 - display_width_u16("42% cpu | 14:30");
+        // The command's SGR color wins for its span; unstyled spans fall back
+        // to the theme, and everything sits on the panel background.
+        assert_eq!(buffer[(status_x, 0)].style().fg, Some(Color::Indexed(1)));
+        assert_eq!(buffer[(status_x, 0)].style().bg, Some(app.palette.panel_bg));
+        assert_eq!(
+            buffer[(status_x + 4, 0)].style().fg,
+            Some(app.palette.overlay1)
+        );
     }
 
     #[test]
