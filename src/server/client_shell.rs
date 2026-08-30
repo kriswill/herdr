@@ -184,16 +184,35 @@ pub(super) fn snapshot(
                 Some(protocol::ClientShellTabStatusSegment {
                     text: "ZOOM".to_owned(),
                     accent: true,
+                    spans: Vec::new(),
                 })
             }
             crate::app::state::TabBarStatusSegment::Text(Some(text)) if !text.is_empty() => {
                 Some(protocol::ClientShellTabStatusSegment {
                     text: text.clone(),
                     accent: false,
+                    spans: Vec::new(),
+                })
+            }
+            crate::app::state::TabBarStatusSegment::Styled(Some(spans)) => {
+                let text: String = spans.iter().map(|span| span.text.as_str()).collect();
+                (!text.is_empty()).then(|| protocol::ClientShellTabStatusSegment {
+                    text,
+                    accent: false,
+                    spans: spans
+                        .iter()
+                        .map(|span| {
+                            protocol::ClientShellTabStatusSpan::from_style(
+                                span.text.clone(),
+                                span.style,
+                            )
+                        })
+                        .collect(),
                 })
             }
             crate::app::state::TabBarStatusSegment::Zoom
-            | crate::app::state::TabBarStatusSegment::Text(_) => None,
+            | crate::app::state::TabBarStatusSegment::Text(_)
+            | crate::app::state::TabBarStatusSegment::Styled(_) => None,
         })
         .collect();
 

@@ -784,6 +784,25 @@ pub(crate) struct PaneFocusTarget {
 pub enum TabBarStatusSegment {
     Zoom,
     Text(Option<String>),
+    /// Output of an `ansi = true` tab bar command: SGR-styled spans parsed
+    /// from the command's last stdout line. `None` until a run succeeds.
+    Styled(Option<Vec<TabBarStyledSpan>>),
+}
+
+/// One run of styled text within an ANSI tab bar command's output. Only SGR
+/// styling survives parsing; all other escape sequences are stripped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabBarStyledSpan {
+    pub text: String,
+    pub style: ratatui::style::Style,
+}
+
+/// Payload of a finished tab bar status command, matching how the segment
+/// was configured: plain sanitized text, or SGR-styled spans.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TabBarCommandOutput {
+    Text(Option<String>),
+    Styled(Option<Vec<TabBarStyledSpan>>),
 }
 
 pub struct AppState {
