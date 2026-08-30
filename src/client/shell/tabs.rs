@@ -281,16 +281,34 @@ fn render_tab_bar_status(
             x = x.saturating_add(separator_width);
         }
         let width = display_width(&segment.text);
-        let style = if segment.accent {
-            Style::default()
-                .fg(panel_contrast_fg(palette))
-                .bg(palette.accent)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(palette.overlay1).bg(palette.panel_bg)
-        };
-        put_text(buffer, x, area.y, width, &segment.text, style);
-        x = x.saturating_add(width);
+        if segment.spans.is_empty() {
+            let style = if segment.accent {
+                Style::default()
+                    .fg(panel_contrast_fg(palette))
+                    .bg(palette.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(palette.overlay1).bg(palette.panel_bg)
+            };
+            put_text(buffer, x, area.y, width, &segment.text, style);
+            x = x.saturating_add(width);
+            continue;
+        }
+        // Command SGR styling wins where set; theme colors fill in unset
+        // foreground/background so the entry sits on the bar.
+        let base = Style::default().fg(palette.overlay1).bg(palette.panel_bg);
+        for span in &segment.spans {
+            let span_width = display_width(&span.text);
+            put_text(
+                buffer,
+                x,
+                area.y,
+                span_width,
+                &span.text,
+                base.patch(span.style()),
+            );
+            x = x.saturating_add(span_width);
+        }
     }
 }
 

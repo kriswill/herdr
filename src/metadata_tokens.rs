@@ -88,6 +88,19 @@ impl MetadataTokens {
             .collect()
     }
 
+    /// Order-independent hash of the current key/value pairs. Deterministic
+    /// within a process and allocation-free, so callers can poll it cheaply to
+    /// detect token changes.
+    pub(crate) fn value_fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        self.entries.iter().fold(0_u64, |acc, (key, token)| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            key.hash(&mut hasher);
+            token.value.hash(&mut hasher);
+            acc ^ hasher.finish()
+        })
+    }
+
     pub(crate) fn next_expiry(&self) -> Option<Instant> {
         self.entries
             .values()

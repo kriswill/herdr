@@ -87,10 +87,12 @@ fn tab_bar_renders_endpoint_status_ellipses_and_clamps_to_useful_scroll() {
         crate::protocol::ClientShellTabStatusSegment {
             text: "ZOOM".into(),
             accent: true,
+            spans: Vec::new(),
         },
         crate::protocol::ClientShellTabStatusSegment {
             text: "host".into(),
             accent: false,
+            spans: Vec::new(),
         },
     ];
     projected.tab_bar_right_separator = " · ".into();
@@ -772,4 +774,53 @@ fn resize_mode_reuses_endpoint_resize_and_stays_active_until_done() {
 
     assert!(state.handle_input_bytes(b"\r").actions.is_empty());
     assert_eq!(state.mode, ClientShellMode::Terminal);
+}
+
+#[test]
+fn tab_bar_renders_styled_status_spans_with_command_colors() {
+    use ratatui::style::{Color, Style};
+
+    let mut projected = snapshot();
+    projected.tab_bar_right = vec![
+        crate::protocol::ClientShellTabStatusSegment {
+            text: "42% cpu".into(),
+            accent: false,
+            spans: vec![
+                crate::protocol::ClientShellTabStatusSpan::from_style(
+                    "42%".into(),
+                    Style::default().fg(Color::Indexed(1)),
+                ),
+                crate::protocol::ClientShellTabStatusSpan::from_style(
+                    " cpu".into(),
+                    Style::default(),
+                ),
+            ],
+        },
+        crate::protocol::ClientShellTabStatusSegment {
+            text: "14:30".into(),
+            accent: false,
+            spans: Vec::new(),
+        },
+    ];
+    projected.tab_bar_right_separator = " | ".into();
+    let mut config = ClientShellConfig::from_config(&Config::default());
+    config.mobile_width_threshold = 0;
+    let palette = config.palette.clone();
+    let mut state = ClientShellState::new(config);
+    state.set_snapshot(Box::new(projected));
+    state.set_pane_surface(surface());
+    let frame = state.compose(80, 20).expect("styled status frame");
+    let top = &frame.cells[..frame.width as usize];
+    let row = top
+        .iter()
+        .map(|cell| cell.symbol.as_str())
+        .collect::<String>();
+    assert!(row.ends_with("42% cpu | 14:30"), "tab row: {row:?}");
+    let status_x = 80 - "42% cpu | 14:30".len();
+    // The command's SGR color wins for its span; unstyled spans fall back to
+    // the theme, and everything sits on the panel background.
+    let packed = crate::protocol::color_to_u32;
+    assert_eq!(top[status_x].fg, packed(Color::Indexed(1)));
+    assert_eq!(top[status_x].bg, packed(palette.panel_bg));
+    assert_eq!(top[status_x + 4].fg, packed(palette.overlay1));
 }

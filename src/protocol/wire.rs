@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 // ---------------------------------------------------------------------------
 
 /// Current protocol version. Bumped when wire format changes incompatibly.
-pub const PROTOCOL_VERSION: u32 = 22;
+pub const PROTOCOL_VERSION: u32 = 23;
 
 /// Maximum allowed frame payload size (2 MB). Frames larger than this are
 /// rejected to prevent denial-of-service via oversized length prefixes.
@@ -1006,6 +1006,44 @@ pub struct ClientShellCommand {
 pub struct ClientShellTabStatusSegment {
     pub text: String,
     pub accent: bool,
+    /// SGR-styled runs for an `ansi = true` status command. Empty for plain
+    /// segments; when present, `text` holds the same content unstyled so an
+    /// older client renders the entry without color instead of dropping it.
+    #[serde(default)]
+    pub spans: Vec<ClientShellTabStatusSpan>,
+}
+
+/// One styled run within a tab bar status segment. Colors use the packed
+/// `color_to_u32` encoding; `modifier` carries ratatui modifier bits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClientShellTabStatusSpan {
+    pub text: String,
+    pub fg: Option<u32>,
+    pub bg: Option<u32>,
+    #[serde(default)]
+    pub modifier: u16,
+}
+
+impl ClientShellTabStatusSpan {
+    pub fn from_style(text: String, style: ratatui::style::Style) -> Self {
+        Self {
+            text,
+            fg: style.fg.map(color_to_u32),
+            bg: style.bg.map(color_to_u32),
+            modifier: modifier_to_u16(style.add_modifier),
+        }
+    }
+
+    pub fn style(&self) -> ratatui::style::Style {
+        let mut style = ratatui::style::Style::default();
+        if let Some(fg) = self.fg {
+            style = style.fg(u32_to_color(fg));
+        }
+        if let Some(bg) = self.bg {
+            style = style.bg(u32_to_color(bg));
+        }
+        style.add_modifier(u16_to_modifier(self.modifier))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2639,6 +2677,7 @@ mod tests {
             tab_bar_right: vec![ClientShellTabStatusSegment {
                 text: "host".into(),
                 accent: false,
+                spans: Vec::new(),
             }],
             tab_bar_right_separator: " · ".into(),
             agent_view_label: None,

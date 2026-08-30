@@ -144,6 +144,10 @@ pub struct App {
     tab_bar_datetimes: Vec<tab_bar_status::TabBarDatetimeRuntime>,
     tab_bar_commands: Vec<tab_bar_status::TabBarCommandRuntime>,
     next_tab_bar_datetime_refresh: Option<Instant>,
+    /// Fingerprint of the focused workspace's metadata token values the last
+    /// time tab bar status tasks ran; a change re-runs status commands so
+    /// their `HERDR_TOKEN_*` environment stays current.
+    tab_bar_token_fingerprint: Option<u64>,
     /// Parsed `ui.window_title` plus the hostname resolved when it was applied.
     window_title_template: Option<(crate::config::WindowTitleTemplate, String)>,
     pub(crate) persist_pane_history: bool,
@@ -605,6 +609,7 @@ impl App {
             tab_bar_datetimes: Vec::new(),
             tab_bar_commands: Vec::new(),
             next_tab_bar_datetime_refresh: None,
+            tab_bar_token_fingerprint: None,
             window_title_template: None,
             persist_pane_history: config.experimental.pane_history,
             last_render_at: None,
@@ -1063,6 +1068,8 @@ mod tests {
         app.configure_tab_bar_status(
             &[crate::config::TabBarRightEntryConfig::Command {
                 command: "status".into(),
+                argv: Vec::new(),
+                ansi: false,
                 interval_seconds: 5,
                 timeout_seconds: 2,
             }],
@@ -1072,7 +1079,9 @@ mod tests {
         let event = |generation, output: Option<&str>| AppEvent::TabBarCommandFinished {
             generation,
             segment_index: 0,
-            result: Ok(output.map(str::to_string)),
+            result: Ok(crate::app::state::TabBarCommandOutput::Text(
+                output.map(str::to_string),
+            )),
         };
 
         assert!(!app.handle_internal_event_with_render_impact(event(generation, None)));

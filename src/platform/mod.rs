@@ -61,6 +61,16 @@ pub(crate) fn detached_custom_command_process(command: &str) -> std::process::Co
     process
 }
 
+/// Like [`detached_custom_command_process`] but runs the program directly
+/// with the given arguments, without a shell.
+pub(crate) fn detached_argv_command_process(argv: &[String]) -> std::process::Command {
+    let mut process =
+        std::process::Command::new(argv.first().map(String::as_str).unwrap_or_default());
+    process.args(argv.iter().skip(1));
+    configure_background_command(&mut process);
+    process
+}
+
 pub(crate) fn pane_custom_command_pty_builder(command: &str) -> portable_pty::CommandBuilder {
     pane_custom_command_pty_builder_platform(command)
 }
