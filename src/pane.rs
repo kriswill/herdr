@@ -703,7 +703,8 @@ fn process_probe_result(
 ) -> ProcessProbeResult {
     ProcessProbeResult {
         process_group_id: Some(job.process_group_id),
-        foreground_is_pane_shell: job.processes.iter().any(|process| process.pid == pid),
+        foreground_is_pane_shell: job.processes.iter().any(|process| process.pid == pid)
+            || crate::detect::nested_shells::is_shell_prompt(job),
         agent: Some(agent),
         process_name: Some(process_name),
     }
@@ -764,7 +765,8 @@ fn probe_foreground_process_from_jobs(
         let identified = crate::detect::identify_agent_in_job(job);
         return ProcessProbeResult {
             process_group_id: Some(job.process_group_id),
-            foreground_is_pane_shell: job.processes.iter().any(|process| process.pid == pid),
+            foreground_is_pane_shell: job.processes.iter().any(|process| process.pid == pid)
+                || crate::detect::nested_shells::is_shell_prompt(job),
             agent: identified.as_ref().map(|(agent, _)| *agent),
             process_name: identified.map(|(_, process_name)| process_name),
         };

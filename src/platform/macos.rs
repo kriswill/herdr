@@ -24,6 +24,7 @@ pub(crate) use super::unix_common::{
 };
 
 mod bootstrap;
+mod nested_pty;
 pub(crate) use bootstrap::{configure_server_daemon_context, prepare_server_process};
 
 #[cfg(test)]
@@ -529,7 +530,7 @@ pub fn foreground_process_group_id(pid: u32) -> Option<u32> {
     let fg = info.e_tpgid;
     if fg > 0 {
         #[allow(clippy::unnecessary_cast)] // info.e_tpgid (pid_t) type is platform-dependent
-        Some(fg as u32)
+        Some(nested_pty::foreground_process_group(fg as u32, info.e_tdev))
     } else {
         None
     }

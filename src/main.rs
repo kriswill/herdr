@@ -434,6 +434,10 @@ pane_history = false
 # Cursor shape rendered when reveal_hidden_cursor_for_cjk_ime is true.
 # Values: block, steady_block (default), underline, steady_underline, bar, steady_bar.
 # cjk_ime_cursor_shape = "steady_block"
+# Detect agents that run inside a nested shell: a PTY session such as
+# `devenv shell` or `script`, or a subshell. The agent clears as soon as that
+# shell returns to its prompt. macOS and Linux only.
+# follow_nested_shells = false
 
 [advanced]
 # Maximum scrollback buffer size in bytes retained per pane terminal.
