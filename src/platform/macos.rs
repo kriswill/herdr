@@ -24,6 +24,7 @@ pub(crate) use super::unix_common::{
 };
 
 mod bootstrap;
+mod nested_pty;
 pub(crate) use bootstrap::{configure_server_daemon_context, prepare_server_process};
 
 mod shutdown;
@@ -538,7 +539,7 @@ pub fn foreground_process_group_id(pid: u32) -> Option<u32> {
     let fg = info.e_tpgid;
     if fg > 0 {
         #[allow(clippy::unnecessary_cast)] // info.e_tpgid (pid_t) type is platform-dependent
-        Some(fg as u32)
+        Some(nested_pty::foreground_process_group(fg as u32, info.e_tdev))
     } else {
         None
     }
@@ -935,8 +936,8 @@ pub fn live_pane_process_group(shell_pid: u32, pid: u32, start_token: u64) -> Op
     let shell = process_bsdinfo(shell_pid)?;
     (process.pbi_status != libc::SZOMB
         && bsdinfo_start_token(&process) == start_token
-        && process.e_tdev == shell.e_tdev)
-        .then_some(process.pbi_pgid)
+        && (process.e_tdev == shell.e_tdev || nested_pty::in_nested_session(shell_pid, pid)))
+    .then_some(process.pbi_pgid)
 }
 
 fn bsdinfo_start_token(info: &libc::proc_bsdinfo) -> u64 {

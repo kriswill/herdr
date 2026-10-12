@@ -495,6 +495,7 @@ impl App {
         let theme_runtime = theme_runtime_config(config, true);
         let (theme_palette, theme_name) = resolve_effective_theme(&theme_runtime, None);
 
+        crate::detect::nested_shells::set_enabled(config.experimental.follow_nested_shells);
         let mut state = AppState {
             terminals: std::collections::HashMap::new(),
             direct_attach_resize_locks: std::collections::HashSet::new(),
@@ -947,6 +948,7 @@ impl App {
         }
 
         if !invalid_section("experimental") {
+            crate::detect::nested_shells::set_enabled(config.experimental.follow_nested_shells);
             self.state.reveal_hidden_cursor_for_cjk_ime =
                 config.experimental.reveal_hidden_cursor_for_cjk_ime;
             self.state.cjk_ime_agent_filter_configured =

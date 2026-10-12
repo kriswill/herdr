@@ -842,7 +842,8 @@ fn process_probe_result(
 ) -> ProcessProbeResult {
     ProcessProbeResult {
         process_group_id: Some(job.process_group_id),
-        foreground_is_pane_shell: job.processes.iter().any(|process| process.pid == pid),
+        foreground_is_pane_shell: job.processes.iter().any(|process| process.pid == pid)
+            || crate::detect::nested_shells::is_shell_prompt(job),
         agent: Some(agent),
         agent_pid: Some(agent_pid),
         process_name: Some(process_name),
@@ -897,7 +898,8 @@ fn probe_foreground_process_from_jobs(
         }
         return ProcessProbeResult {
             process_group_id: Some(job.process_group_id),
-            foreground_is_pane_shell: job.processes.iter().any(|process| process.pid == pid),
+            foreground_is_pane_shell: job.processes.iter().any(|process| process.pid == pid)
+                || crate::detect::nested_shells::is_shell_prompt(job),
             agent: None,
             agent_pid: None,
             process_name: None,

@@ -1115,6 +1115,10 @@ pub struct ExperimentalConfig {
     /// elsewhere and a best-effort no-op if the switch fails.
     /// Default: false.
     pub switch_ascii_input_source_in_prefix: bool,
+    /// Detect agents that run inside a nested shell: a PTY session such as
+    /// `devenv shell` or `script`, or a subshell. The agent clears as soon as
+    /// that shell returns to its prompt. macOS and Linux only. Default: false.
+    pub follow_nested_shells: bool,
 }
 
 impl Default for KeysConfig {

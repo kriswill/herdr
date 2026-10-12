@@ -26,6 +26,7 @@ pub(crate) use super::unix_common::{
 #[cfg(test)]
 mod config_file_tests;
 
+mod nested_pty;
 mod shutdown;
 pub(crate) use shutdown::monitor_host_shutdown;
 
@@ -656,7 +657,7 @@ pub fn foreground_process_group_id(child_pid: u32) -> Option<u32> {
     let fields: Vec<&str> = rest.split_whitespace().collect();
     // After (comm): state(0) ppid(1) pgrp(2) session(3) tty_nr(4) tpgid(5)
     let tpgid: i32 = fields.get(5)?.parse().ok()?;
-    (tpgid > 0).then_some(tpgid as u32)
+    (tpgid > 0).then(|| nested_pty::foreground_process_group(child_pid, tpgid as u32))
 }
 
 pub fn foreground_process_group_id_for_tty_fd(fd: RawFd) -> Option<u32> {
@@ -678,7 +679,7 @@ pub fn live_pane_process_group(shell_pid: u32, pid: u32, start_token: u64) -> Op
     let shell_session = process_job_stat(shell_pid)?.session;
     (!matches!(stat.state, 'Z' | 'X')
         && stat.start_time == start_token
-        && stat.session == shell_session
+        && (stat.session == shell_session || nested_pty::in_nested_session(shell_pid, pid))
         && stat.pgrp > 0)
         .then_some(stat.pgrp as u32)
 }
