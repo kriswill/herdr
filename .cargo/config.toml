@@ -1,2 +1,10 @@
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# Tests pin SHELL=/bin/sh but inherit the developer's ENV. Interactive sh
+# (bash in POSIX mode on macOS, dash elsewhere) sources $ENV, so a ksh/oksh rc
+# with vi mode, prompt hooks, or direnv slows and garbles pane shells and
+# times out input-driven tests. Force it to /dev/null for everything cargo and
+# nextest spawn, matching the per-test override in src/detect/mod.rs.
+[env]
+ENV = { value = "/dev/null", force = true }
